@@ -5,23 +5,8 @@ from datetime import datetime
 import base64
 import sys
 import os
-import google.generativeai as genai
-
-GOOGLE_API_KEY = "AQ.Ab8RN6JZQAEL_tn9dDiGhJYn26zQ-tiXoHSccicME0Mpw3T3aw"
-
-# API Anahtarını Tanımla
-genai.configure(api_key=GOOGLE_API_KEY)
-
-# Model Yapılandırması
-POKE_SYSTEM_INSTRUCTION = """
-Senin adın PokéLineX. Bir Pokémon ansiklopedisisin ve güncel Pokémon haberlerini takip eden uzman bir asistansın.
-Sadece Pokémon ve ilgili oyun/medya konularını konuş, Türkçe cevap ver.
-"""
-
-model = genai.GenerativeModel(
-    model_name='gemini-1.5-flash',
-    system_instruction=POKE_SYSTEM_INSTRUCTION
-)
+from google import genai
+from google.genai import types
 
 # --- 0. DİNAMİK DOSYA YOLU YARDIMCISI ---
 def get_asset_path(filename):
@@ -33,6 +18,10 @@ def get_asset_path(filename):
 
 # 1. SAYFA YAPILANDIRMASI
 st.set_page_config(page_title="PokéLineX: PokeAI Asistanı", page_icon="⚡", layout="wide")
+
+# API İSTEMCİSİ (API Anahtarınızı os.environ veya st.secrets üzerinden yönetmek daha güvenlidir)
+GOOGLE_API_KEY = "AQ.Ab8RN6JZQAEL_tn9dDiGhJYn26zQ-tiXoHSccicME0Mpw3T3aw"
+client = genai.Client(api_key=GOOGLE_API_KEY)
 
 # Veritabanı Bağlantıları
 conn = sqlite3.connect('poke_history.db', check_same_thread=False)
@@ -48,7 +37,7 @@ conn.commit()
 if "current_session_id" not in st.session_state:
     st.session_state.current_session_id = datetime.now().strftime("%Y%m%d_%H%M%S")
 
-# --- 2. LOGO VE GÖRSEL AYARLARI (DİNAMİK YAPI) ---
+# --- 2. LOGO VE GÖRSEL AYARLARI ---
 BOT_AVATAR = get_asset_path("PokeLineX-bot-logo.png")
 
 def set_bg(image_filename):
@@ -96,19 +85,6 @@ def set_bg(image_filename):
             }}
             </style>
             """, unsafe_allow_html=True)
-
-if os.path.exists(BOT_AVATAR):
-    st.sidebar.image(BOT_AVATAR, width=80)
-
-st.sidebar.subheader("Tema Seçimi")
-template = st.sidebar.selectbox("Karakter Teması", ["Pikachu", "Gengar", "Charizard"])
-
-templates = {
-    "Pikachu": "pikachu_bg.jpg",
-    "Gengar": "gengar_bg.jpg",
-    "Charizard": "charizard_bg.jpg"
-}
-set_bg(templates[template])
 
 # --- 3. OTOMATİK GİRİŞ SİSTEMİ ---
 USER_FILE = "last_user.txt"
@@ -164,7 +140,20 @@ if not st.session_state.user_email:
                 
     st.stop()
 
-# --- 4. SİSTEM TALİMATI VE YAN PANEL ---
+# --- 4. TEMA VE YAN PANEL AYARLARI ---
+if os.path.exists(BOT_AVATAR):
+    st.sidebar.image(BOT_AVATAR, width=80)
+
+st.sidebar.subheader("Tema Seçimi")
+template = st.sidebar.selectbox("Karakter Teması", ["Pikachu", "Gengar", "Charizard"])
+
+templates = {
+    "Pikachu": "pikachu_bg.jpg",
+    "Gengar": "gengar_bg.jpg",
+    "Charizard": "charizard_bg.jpg"
+}
+set_bg(templates[template])
+
 POKE_SYSTEM_INSTRUCTION = """
 Senin adın PokéLineX. Bir Pokémon ansiklopedisisin ve güncel Pokémon haberlerini takip eden uzman bir asistansın.
 Kullanıcı yeni duyurulan TCG paketlerini, yeni çıkan Pokémon oyunlarını, etkinlikleri ve yamaları sorduğunda CANLI WEB ARAMASI YAP.
@@ -181,11 +170,13 @@ use_web_search = st.sidebar.checkbox("Web Araması (Canlı)", value=False)
 if use_web_search:
     current_config = types.GenerateContentConfig(
         tools=[types.Tool(google_search=types.GoogleSearch())],
-        system_instruction=POKE_SYSTEM_INSTRUCTION
+        system_instruction=POKE_SYSTEM_INSTRUCTION,
+        temperature=0.7
     )
 else:
     current_config = types.GenerateContentConfig(
-        system_instruction=POKE_SYSTEM_INSTRUCTION
+        system_instruction=POKE_SYSTEM_INSTRUCTION,
+        temperature=0.7
     )
 
 if st.sidebar.button("Geçmişi Sil"):
@@ -193,7 +184,7 @@ if st.sidebar.button("Geçmişi Sil"):
               (st.session_state.user_email, st.session_state.current_session_id))
     conn.commit()
     st.session_state.chat = client.chats.create(
-        model='gemini-3.1-flash-lite',
+        model='gemini-2.5-flash',
         config=current_config,
         history=[]
     )
@@ -202,7 +193,7 @@ if st.sidebar.button("Geçmişi Sil"):
 if st.sidebar.button("➕ Yeni Sohbet"):
     st.session_state.current_session_id = datetime.now().strftime("%Y%m%d_%H%M%S")
     st.session_state.chat = client.chats.create(
-        model='gemini-3.1-flash-lite',
+        model='gemini-2.5-flash',
         config=current_config,
         history=[]
     )
@@ -217,10 +208,15 @@ if "chat" not in st.session_state:
     formatted_history = []
     for role, content in db_history:
         gemini_role = "model" if role == "assistant" else "user"
-        formatted_history.append({"role": gemini_role, "parts": [{"text": content}]})
+        formatted_history.append(
+            types.Content(
+                role=gemini_role,
+                parts=[types.Part.from_text(text=content)]
+            )
+        )
     
     st.session_state.chat = client.chats.create(
-        model='gemini-3.1-flash-lite',
+        model='gemini-2.5-flash',
         config=current_config,
         history=formatted_history
     )
@@ -264,14 +260,20 @@ if user_input:
         try:
             if uploaded_file:
                 img = Image.open(uploaded_file)
-                response = model.generate_content([user_input, img])
+                response = client.models.generate_content(
+                    model='gemini-2.5-flash',
+                    contents=[user_input, img],
+                    config=current_config
+                )
+                response_text = response.text
             else:
-                response = model.generate_content(user_input)
+                response = st.session_state.chat.send_message(user_input)
+                response_text = response.text
             
-            st.markdown(response.text)
+            st.markdown(response_text)
             
             c.execute("INSERT INTO history VALUES (?, ?, ?, ?, ?)", 
-                      (st.session_state.user_email, "assistant", response.text, now, st.session_state.current_session_id))
+                      (st.session_state.user_email, "assistant", response_text, now, st.session_state.current_session_id))
             conn.commit()
         except Exception as e:
             st.error(f"Hata: {e}")
@@ -304,7 +306,12 @@ for sess_id, first_msg in user_sessions:
         formatted_history = []
         for role, content in sess_history:
             gemini_role = "model" if role == "assistant" else "user"
-            formatted_history.append({"role": gemini_role, "parts": [{"text": content}]})
+            formatted_history.append(
+                types.Content(
+                    role=gemini_role,
+                    parts=[types.Part.from_text(text=content)]
+                )
+            )
             
         st.session_state.chat = client.chats.create(
             model='gemini-3.1-flash-lite',
@@ -324,4 +331,4 @@ st.sidebar.subheader("Güvenilir Kaynaklar")
 st.sidebar.caption("[Serebii](https://www.serebii.net) | [Bulbapedia](https://bulbapedia.bulbagarden.net)")
 st.sidebar.caption("[PokeDB](https://pokemondb.net) | [Official](https://www.pokemon.com)")
 st.sidebar.caption("[PokeOS](https://www.pokeos.com) | [PokeBeach](https://www.pokebeach.com)")
-st.sidebar.caption("PokéLineX v1.4 | Gemini 3.1 ile oluşturuldu")
+st.sidebar.caption("PokéLineX v1.4 | Gemini ile oluşturuldu")
