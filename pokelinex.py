@@ -24,8 +24,12 @@ st.set_page_config(page_title="PokéLineX: PokeAI Asistanı", page_icon="⚡", l
 # API Anahtarı ve İstemci Başlatma
 GOOGLE_API_KEY = "AQ.Ab8RN6JZQAEL_tn9dDiGhJYn26zQ-tiXoHSccicME0Mpw3T3aw"
 
+# SDK'nın OAuth yerine API Key kullanmasını zorlamak için ortam değişkenine atıyoruz
+os.environ["GEMINI_API_KEY"] = GOOGLE_API_KEY
+
 @st.cache_resource
 def get_genai_client():
+    # api_key parametresini explicit geçerek başlatıyoruz
     return genai.Client(api_key=GOOGLE_API_KEY)
 
 client = get_genai_client()
