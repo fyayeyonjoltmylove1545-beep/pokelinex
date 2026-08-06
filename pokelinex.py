@@ -9,12 +9,8 @@ from google import genai
 from google.genai import types
 
 # --- API MÜŞTERİSİ TANIMLAMA ---
-# İstediğin yöntemi seçebilirsin:
-# 1. Streamlit Secrets (Tavsiye edilen):
-# client = genai.Client(api_key=st.secrets["GEMINI_API_KEY"])
-
-# 2. Doğrudan Koda Yazma:
-client = genai.Client(api_key="AQ.Ab8RN6IRl1h-ov1P5eRm5JcWqtISbhoT78juPAtfxgLLBQcrdQ")
+# Streamlit Secrets üzerinden API Key çekme (Güvenli Yöntem)
+client = genai.Client(api_key=st.secrets["AQ.Ab8RN6IRl1h-ov1P5eRm5JcWqtISbhoT78juPAtfxgLLBQcrdQ"])
 
 # --- 0. DİNAMİK DOSYA YOLU YARDIMCISI ---
 def get_asset_path(filename):
@@ -168,18 +164,21 @@ st.sidebar.title(f"👤 {st.session_state.user_email}")
 st.sidebar.markdown("---")
 st.sidebar.subheader("Kontroller")
 
-# YENİ SOHBET BAŞLATMA YARDIMCISI (GOOGLE-GENAI MODELİ)
-def init_chat_session(history_list=None):
+# YENİ SOHBET BAŞLATMA VE YENİDEN BAĞLANMA YARDIMCISI
+def get_active_chat():
+    c.execute("SELECT role, content FROM history WHERE email=? AND session_id=? ORDER BY timestamp ASC", 
+              (st.session_state.user_email, st.session_state.current_session_id))
+    db_history = c.fetchall()
+    
     formatted_history = []
-    if history_list:
-        for role, content in history_list:
-            gemini_role = "model" if role == "assistant" else "user"
-            formatted_history.append(
-                types.Content(
-                    role=gemini_role,
-                    parts=[types.Part.from_text(text=content)]
-                )
+    for role, content in db_history:
+        gemini_role = "model" if role == "assistant" else "user"
+        formatted_history.append(
+            types.Content(
+                role=gemini_role,
+                parts=[types.Part.from_text(text=content)]
             )
+        )
     
     return client.chats.create(
         model="gemini-2.5-flash",
@@ -194,20 +193,17 @@ if st.sidebar.button("Geçmişi Sil"):
     c.execute("DELETE FROM history WHERE email=? AND session_id=?", 
               (st.session_state.user_email, st.session_state.current_session_id))
     conn.commit()
-    st.session_state.chat = init_chat_session()
+    st.session_state.chat = get_active_chat()
     st.rerun()
 
 if st.sidebar.button("➕ Yeni Sohbet"):
     st.session_state.current_session_id = datetime.now().strftime("%Y%m%d_%H%M%S")
-    st.session_state.chat = init_chat_session()
+    st.session_state.chat = get_active_chat()
     st.rerun()
 
 # --- 5. SOHBET OTURUMUNU BAŞLATMA ---
 if "chat" not in st.session_state:
-    c.execute("SELECT role, content FROM history WHERE email=? AND session_id=? ORDER BY timestamp ASC", 
-              (st.session_state.user_email, st.session_state.current_session_id))
-    db_history = c.fetchall()
-    st.session_state.chat = init_chat_session(db_history)
+    st.session_state.chat = get_active_chat()
 
 # --- 6. ANA EKRAN VE MESAJ GEÇMİŞİ ---
 col1, col2 = st.columns([1, 6])
@@ -249,7 +245,7 @@ if user_input:
             if uploaded_file:
                 img = Image.open(uploaded_file)
                 response = client.models.generate_content(
-                    model='gemini-3.1-flash-lite',
+                    model='gemini-2.5-flash',
                     contents=[user_input, img],
                     config=types.GenerateContentConfig(
                         system_instruction=POKE_SYSTEM_INSTRUCTION
@@ -257,7 +253,13 @@ if user_input:
                 )
                 response_text = response.text
             else:
-                response = st.session_state.chat.send_message(user_input)
+                # İstemci kapanmışsa yakalayıp yeniden başlatma bloğu
+                try:
+                    response = st.session_state.chat.send_message(user_input)
+                except Exception:
+                    st.session_state.chat = get_active_chat()
+                    response = st.session_state.chat.send_message(user_input)
+                
                 response_text = response.text
             
             st.markdown(response_text)
@@ -288,12 +290,7 @@ for sess_id, first_msg in user_sessions:
     
     if st.sidebar.button(f"{is_active}{button_label}", key=sess_id):
         st.session_state.current_session_id = sess_id
-        
-        c.execute("SELECT role, content FROM history WHERE email=? AND session_id=? ORDER BY timestamp ASC", 
-                  (st.session_state.user_email, sess_id))
-        sess_history = c.fetchall()
-        
-        st.session_state.chat = init_chat_session(sess_history)
+        st.session_state.chat = get_active_chat()
         st.rerun()
 
 if st.sidebar.button("Çıkış Yap"):
