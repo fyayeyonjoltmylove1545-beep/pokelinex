@@ -5,8 +5,11 @@ from datetime import datetime
 import base64
 import sys
 import os
-from google import genai
-from google.genai import types
+import google.generativeai as genai
+
+# API ANAHTARI
+GOOGLE_API_KEY = "AQ.Ab8RN6JZQAEL_tn9dDiGhJYn26zQ-tiXoHSccicME0Mpw3T3aw"
+genai.configure(api_key=GOOGLE_API_KEY)
 
 # --- 0. DİNAMİK DOSYA YOLU YARDIMCISI ---
 def get_asset_path(filename):
@@ -18,10 +21,6 @@ def get_asset_path(filename):
 
 # 1. SAYFA YAPILANDIRMASI
 st.set_page_config(page_title="PokéLineX: PokeAI Asistanı", page_icon="⚡", layout="wide")
-
-# API İSTEMCİSİ (API Anahtarınızı os.environ veya st.secrets üzerinden yönetmek daha güvenlidir)
-GOOGLE_API_KEY = "AQ.Ab8RN6JZQAEL_tn9dDiGhJYn26zQ-tiXoHSccicME0Mpw3T3aw"
-client = genai.Client(api_key=GOOGLE_API_KEY)
 
 # Veritabanı Bağlantıları
 conn = sqlite3.connect('poke_history.db', check_same_thread=False)
@@ -156,47 +155,30 @@ set_bg(templates[template])
 
 POKE_SYSTEM_INSTRUCTION = """
 Senin adın PokéLineX. Bir Pokémon ansiklopedisisin ve güncel Pokémon haberlerini takip eden uzman bir asistansın.
-Kullanıcı yeni duyurulan TCG paketlerini, yeni çıkan Pokémon oyunlarını, etkinlikleri ve yamaları sorduğunda CANLI WEB ARAMASI YAP.
-Serebii, PokéBeach, Bulbapedia, PokeDB, Pokemon.com, Nintendo Life ve PokéOS gibi kaynakları tara.
+Kullanıcı yeni duyurulan TCG paketlerini, yeni çıkan Pokémon oyunlarını, etkinlikleri ve yamaları sorduğunda yanıt ver.
 Sadece Pokémon ve ilgili oyun/medya konularını konuş, Türkçe cevap ver.
 """
+
+# Gemini Model Tanımlaması
+model = genai.GenerativeModel(
+    model_name='gemini-1.5-flash',
+    system_instruction=POKE_SYSTEM_INSTRUCTION
+)
 
 st.sidebar.title(f"👤 {st.session_state.user_email}")
 st.sidebar.markdown("---")
 st.sidebar.subheader("Kontroller")
 
-use_web_search = st.sidebar.checkbox("Web Araması (Canlı)", value=False)
-
-if use_web_search:
-    current_config = types.GenerateContentConfig(
-        tools=[types.Tool(google_search=types.GoogleSearch())],
-        system_instruction=POKE_SYSTEM_INSTRUCTION,
-        temperature=0.7
-    )
-else:
-    current_config = types.GenerateContentConfig(
-        system_instruction=POKE_SYSTEM_INSTRUCTION,
-        temperature=0.7
-    )
-
 if st.sidebar.button("Geçmişi Sil"):
     c.execute("DELETE FROM history WHERE email=? AND session_id=?", 
               (st.session_state.user_email, st.session_state.current_session_id))
     conn.commit()
-    st.session_state.chat = client.chats.create(
-        model='gemini-2.5-flash',
-        config=current_config,
-        history=[]
-    )
+    st.session_state.chat = model.start_chat(history=[])
     st.rerun()
 
 if st.sidebar.button("➕ Yeni Sohbet"):
     st.session_state.current_session_id = datetime.now().strftime("%Y%m%d_%H%M%S")
-    st.session_state.chat = client.chats.create(
-        model='gemini-2.5-flash',
-        config=current_config,
-        history=[]
-    )
+    st.session_state.chat = model.start_chat(history=[])
     st.rerun()
 
 # --- 5. SOHBET OTURUMUNU BAŞLATMA ---
@@ -208,18 +190,9 @@ if "chat" not in st.session_state:
     formatted_history = []
     for role, content in db_history:
         gemini_role = "model" if role == "assistant" else "user"
-        formatted_history.append(
-            types.Content(
-                role=gemini_role,
-                parts=[types.Part.from_text(text=content)]
-            )
-        )
+        formatted_history.append({"role": gemini_role, "parts": [content]})
     
-    st.session_state.chat = client.chats.create(
-        model='gemini-2.5-flash',
-        config=current_config,
-        history=formatted_history
-    )
+    st.session_state.chat = model.start_chat(history=formatted_history)
 
 # --- 6. ANA EKRAN VE MESAJ GEÇMİŞİ ---
 col1, col2 = st.columns([1, 6])
@@ -260,20 +233,14 @@ if user_input:
         try:
             if uploaded_file:
                 img = Image.open(uploaded_file)
-                response = client.models.generate_content(
-                    model='gemini-2.5-flash',
-                    contents=[user_input, img],
-                    config=current_config
-                )
-                response_text = response.text
+                response = model.generate_content([user_input, img])
             else:
                 response = st.session_state.chat.send_message(user_input)
-                response_text = response.text
             
-            st.markdown(response_text)
+            st.markdown(response.text)
             
             c.execute("INSERT INTO history VALUES (?, ?, ?, ?, ?)", 
-                      (st.session_state.user_email, "assistant", response_text, now, st.session_state.current_session_id))
+                      (st.session_state.user_email, "assistant", response.text, now, st.session_state.current_session_id))
             conn.commit()
         except Exception as e:
             st.error(f"Hata: {e}")
@@ -306,18 +273,9 @@ for sess_id, first_msg in user_sessions:
         formatted_history = []
         for role, content in sess_history:
             gemini_role = "model" if role == "assistant" else "user"
-            formatted_history.append(
-                types.Content(
-                    role=gemini_role,
-                    parts=[types.Part.from_text(text=content)]
-                )
-            )
+            formatted_history.append({"role": gemini_role, "parts": [content]})
             
-        st.session_state.chat = client.chats.create(
-            model='gemini-3.1-flash-lite',
-            config=current_config,
-            history=formatted_history
-        )
+        st.session_state.chat = model.start_chat(history=formatted_history)
         st.rerun()
 
 if st.sidebar.button("Çıkış Yap"):
