@@ -10,7 +10,7 @@ from google.genai import types
 
 # --- API MÜŞTERİSİ TANIMLAMA ---
 # Streamlit Secrets üzerinden API Key çekme (Güvenli Yöntem)
-client = genai.Client(api_key=st.secrets["AQ.Ab8RN6IRl1h-ov1P5eRm5JcWqtISbhoT78juPAtfxgLLBQcrdQ"])
+client = genai.Client(api_key=st.secrets["GEMINI_API_KEY"])
 
 # --- 0. DİNAMİK DOSYA YOLU YARDIMCISI ---
 def get_asset_path(filename):
@@ -181,7 +181,7 @@ def get_active_chat():
         )
     
     return client.chats.create(
-        model="gemini-2.5-flash",
+        model="gemini-3.1-flash-lite",
         config=types.GenerateContentConfig(
             system_instruction=POKE_SYSTEM_INSTRUCTION,
             temperature=0.7
