@@ -253,7 +253,6 @@ with col_input:
 
 if user_input:
     now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-    
     c.execute("INSERT INTO history VALUES (?, ?, ?, ?, ?)", 
               (st.session_state.user_email, "user", user_input, now, st.session_state.current_session_id))
     conn.commit()
@@ -265,17 +264,9 @@ if user_input:
         try:
             if uploaded_file:
                 img = Image.open(uploaded_file)
-                response = client.models.generate_content(
-                    model='gemini-3.1-flash-lite',
-                    contents=[user_input, img],
-                    config=current_config
-                )
+                response = model.generate_content([user_input, img])
             else:
-                response = client.models.generate_content(
-                    model='gemini-3.1-flash-lite',
-                    contents=user_input,
-                    config=current_config
-                )
+                response = model.generate_content(user_input)
             
             st.markdown(response.text)
             
@@ -283,10 +274,7 @@ if user_input:
                       (st.session_state.user_email, "assistant", response.text, now, st.session_state.current_session_id))
             conn.commit()
         except Exception as e:
-            if "429" in str(e) or "RESOURCE_EXHAUSTED" in str(e):
-                st.error("⚠️ Dakikalık / Günlük API arama kotası doldu. Lütfen 1 dakika bekleyip tekrar deneyin veya web aramasını kapatın.")
-            else:
-                st.error(f"Hata: {e}")
+            st.error(f"Hata: {e}")
 
 # --- 8. GEÇMİŞ SOHBETLER LİSTESİ ---
 st.sidebar.markdown("---")
