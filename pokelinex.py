@@ -5,6 +5,23 @@ from datetime import datetime
 import base64
 import sys
 import os
+import google.generativeai as genai
+
+GOOGLE_API_KEY = "AQ.Ab8RN6JZQAEL_tn9dDiGhJYn26zQ-tiXoHSccicME0Mpw3T3aw"
+
+# API Anahtarını Tanımla
+genai.configure(api_key=GOOGLE_API_KEY)
+
+# Model Yapılandırması
+POKE_SYSTEM_INSTRUCTION = """
+Senin adın PokéLineX. Bir Pokémon ansiklopedisisin ve güncel Pokémon haberlerini takip eden uzman bir asistansın.
+Sadece Pokémon ve ilgili oyun/medya konularını konuş, Türkçe cevap ver.
+"""
+
+model = genai.GenerativeModel(
+    model_name='gemini-1.5-flash',
+    system_instruction=POKE_SYSTEM_INSTRUCTION
+)
 
 # --- 0. DİNAMİK DOSYA YOLU YARDIMCISI ---
 def get_asset_path(filename):
@@ -14,25 +31,8 @@ def get_asset_path(filename):
         base_path = os.path.dirname(os.path.abspath(__file__))
     return os.path.join(base_path, filename)
 
-# Yeni SDK İçe Aktarmaları
-from google import genai
-from google.genai import types
-
 # 1. SAYFA YAPILANDIRMASI
 st.set_page_config(page_title="PokéLineX: PokeAI Asistanı", page_icon="⚡", layout="wide")
-
-# API Anahtarı ve İstemci Başlatma
-GOOGLE_API_KEY = "AQ.Ab8RN6JZQAEL_tn9dDiGhJYn26zQ-tiXoHSccicME0Mpw3T3aw"
-
-# SDK'nın OAuth yerine API Key kullanmasını zorlamak için ortam değişkenine atıyoruz
-os.environ["GEMINI_API_KEY"] = GOOGLE_API_KEY
-
-@st.cache_resource
-def get_genai_client():
-    # api_key parametresini explicit geçerek başlatıyoruz
-    return genai.Client(api_key=GOOGLE_API_KEY)
-
-client = get_genai_client()
 
 # Veritabanı Bağlantıları
 conn = sqlite3.connect('poke_history.db', check_same_thread=False)
