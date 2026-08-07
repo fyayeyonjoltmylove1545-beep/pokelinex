@@ -180,7 +180,7 @@ def get_active_chat():
         })
     
     model = genai.GenerativeModel(
-        model_name="v1alpha/gemini-3.1-flash-lite",
+        model_name="v1alpha/gemini-3.1-flash",
         system_instruction=POKE_SYSTEM_INSTRUCTION
     )
     return model.start_chat(history=formatted_history)
@@ -241,7 +241,7 @@ if user_input:
             if uploaded_file:
                 img = Image.open(uploaded_file)
                 vision_model = genai.GenerativeModel(
-                    model_name="v1alpha/gemini-3.1-flash-lite",
+                    model_name="v1alpha/gemini-3.1-flash",
                     system_instruction=POKE_SYSTEM_INSTRUCTION
                 )
                 response = vision_model.generate_content([user_input, img])
