@@ -7,13 +7,17 @@ import sys
 import os
 import google.generativeai as genai
 
-# --- API MÜŞTERİSİ TANIMLAMA (ESKİ SDK) ---
-# Streamlit Secrets üzerinden API Key çekme
+# --- API MÜŞTERİSİ TANIMLAMA ---
 if "GEMINI_API_KEY" in st.secrets:
-    genai.configure(api_key=st.secrets["GEMINI_API_KEY"])
+    genai.configure(
+        api_key=st.secrets["GEMINI_API_KEY"],
+        client_options={"api_endpoint": "generativelanguage.googleapis.com/v1alpha"}
+    )
 else:
-    # Eğer secrets kullanmıyorsan tırnak içine yapıştırabilirsin:
-    genai.configure(api_key="AQ.Ab8RN6IRl1h-ov1P5eRm5JcWqtISbhoT78juPAtfxgLLBQcrdQ")
+    genai.configure(
+        api_key="AQ.Ab8RN6IRl1h-ov1P5eRm5JcWqtISbhoT78juPAtfxgLLBQcrdQ",
+        client_options={"api_endpoint": "generativelanguage.googleapis.com/v1alpha"}
+    )
 
 # --- 0. DİNAMİK DOSYA YOLU YARDIMCISI ---
 def get_asset_path(filename):
