@@ -5,12 +5,15 @@ from datetime import datetime
 import base64
 import sys
 import os
-from google import genai
-from google.genai import types
+import google.generativeai as genai
 
-# --- API MÜŞTERİSİ TANIMLAMA ---
-# Streamlit Secrets üzerinden API Key çekme (Güvenli Yöntem)
-client = genai.Client(api_key="AQ.Ab8RN6IRl1h-ov1P5eRm5JcWqtISbhoT78juPAtfxgLLBQcrdQ")
+# --- API MÜŞTERİSİ TANIMLAMA (ESKİ SDK) ---
+# Streamlit Secrets üzerinden API Key çekme
+if "GEMINI_API_KEY" in st.secrets:
+    genai.configure(api_key=st.secrets["GEMINI_API_KEY"])
+else:
+    # Eğer secrets kullanmıyorsan tırnak içine yapıştırabilirsin:
+    genai.configure(api_key="AQ.Ab8RN6IRl1h-ov1P5eRm5JcWqtISbhoT78juPAtfxgLLBQcrdQ")
 
 # --- 0. DİNAMİK DOSYA YOLU YARDIMCISI ---
 def get_asset_path(filename):
@@ -164,7 +167,7 @@ st.sidebar.title(f"👤 {st.session_state.user_email}")
 st.sidebar.markdown("---")
 st.sidebar.subheader("Kontroller")
 
-# YENİ SOHBET BAŞLATMA VE YENİDEN BAĞLANMA YARDIMCISI
+# ESKİ SDK SOHBET BAŞLATMA
 def get_active_chat():
     c.execute("SELECT role, content FROM history WHERE email=? AND session_id=? ORDER BY timestamp ASC", 
               (st.session_state.user_email, st.session_state.current_session_id))
@@ -173,21 +176,16 @@ def get_active_chat():
     formatted_history = []
     for role, content in db_history:
         gemini_role = "model" if role == "assistant" else "user"
-        formatted_history.append(
-            types.Content(
-                role=gemini_role,
-                parts=[types.Part.from_text(text=content)]
-            )
-        )
+        formatted_history.append({
+            "role": gemini_role,
+            "parts": [content]
+        })
     
-    return client.chats.create(
-        model="gemini-3.1-flash-lite",
-        config=types.GenerateContentConfig(
-            system_instruction=POKE_SYSTEM_INSTRUCTION,
-            temperature=0.7
-        ),
-        history=formatted_history
+    model = genai.GenerativeModel(
+        model_name="gemini-3.1-flash-lite",
+        system_instruction=POKE_SYSTEM_INSTRUCTION
     )
+    return model.start_chat(history=formatted_history)
 
 if st.sidebar.button("Geçmişi Sil"):
     c.execute("DELETE FROM history WHERE email=? AND session_id=?", 
@@ -244,16 +242,13 @@ if user_input:
         try:
             if uploaded_file:
                 img = Image.open(uploaded_file)
-                response = client.models.generate_content(
-                    model='gemini-3.1-flash-lite',
-                    contents=[user_input, img],
-                    config=types.GenerateContentConfig(
-                        system_instruction=POKE_SYSTEM_INSTRUCTION
-                    )
+                vision_model = genai.GenerativeModel(
+                    model_name="gemini-3.1-flash-lite",
+                    system_instruction=POKE_SYSTEM_INSTRUCTION
                 )
+                response = vision_model.generate_content([user_input, img])
                 response_text = response.text
             else:
-                # İstemci kapanmışsa yakalayıp yeniden başlatma bloğu
                 try:
                     response = st.session_state.chat.send_message(user_input)
                 except Exception:
