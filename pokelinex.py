@@ -245,7 +245,7 @@ if user_input:
             if uploaded_file:
                 img = Image.open(uploaded_file)
                 response = client.models.generate_content(
-                    model='gemini-2.5-flash',
+                    model='gemini-3.1-flash-lite',
                     contents=[user_input, img],
                     config=types.GenerateContentConfig(
                         system_instruction=POKE_SYSTEM_INSTRUCTION
