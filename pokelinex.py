@@ -11,8 +11,7 @@ import google.generativeai as genai
 if "GEMINI_API_KEY" in st.secrets:
     genai.configure(api_key=st.secrets["GEMINI_API_KEY"])
 else:
-    genai.configure(api_key="AQ.Ab8RN6IRl1h-ov1P5eRm5JcWqtISbhoT78juPAtfxgLLBQcrdQ")  
-    )
+    genai.configure(api_key="AQ.Ab8RN6IRl1h-ov1P5eRm5JcWqtISbhoT78juPAtfxgLLBQcrdQ") 
 
 # --- 0. DİNAMİK DOSYA YOLU YARDIMCISI ---
 def get_asset_path(filename):
