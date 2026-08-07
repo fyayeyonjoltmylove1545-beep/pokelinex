@@ -9,14 +9,9 @@ import google.generativeai as genai
 
 # --- API MÜŞTERİSİ TANIMLAMA ---
 if "GEMINI_API_KEY" in st.secrets:
-    genai.configure(
-        api_key=st.secrets["GEMINI_API_KEY"],
-        client_options={"api_endpoint": "generativelanguage.googleapis.com/v1alpha"}
-    )
+    genai.configure(api_key=st.secrets["GEMINI_API_KEY"])
 else:
-    genai.configure(
-        api_key="AQ.Ab8RN6IRl1h-ov1P5eRm5JcWqtISbhoT78juPAtfxgLLBQcrdQ",
-        client_options={"api_endpoint": "generativelanguage.googleapis.com/v1alpha"}
+    genai.configure(api_key="AQ.Ab8RN6IRl1h-ov1P5eRm5JcWqtISbhoT78juPAtfxgLLBQcrdQ")  
     )
 
 # --- 0. DİNAMİK DOSYA YOLU YARDIMCISI ---
@@ -186,7 +181,7 @@ def get_active_chat():
         })
     
     model = genai.GenerativeModel(
-        model_name="gemini-3.1-flash-lite",
+        model_name="v1alpha/gemini-3.1-flash-lite",
         system_instruction=POKE_SYSTEM_INSTRUCTION
     )
     return model.start_chat(history=formatted_history)
@@ -247,7 +242,7 @@ if user_input:
             if uploaded_file:
                 img = Image.open(uploaded_file)
                 vision_model = genai.GenerativeModel(
-                    model_name="gemini-3.1-flash-lite",
+                    model_name="v1alpha/gemini-3.1-flash-lite",
                     system_instruction=POKE_SYSTEM_INSTRUCTION
                 )
                 response = vision_model.generate_content([user_input, img])
