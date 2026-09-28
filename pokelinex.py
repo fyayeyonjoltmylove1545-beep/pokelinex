@@ -1,6 +1,5 @@
 import streamlit as st
 from PIL import Image
-import sqlite3
 from datetime import datetime
 import base64
 import sys
@@ -9,7 +8,7 @@ import uuid
 
 from google import genai
 from google.genai import types
-from supabase import create_client
+from supabase import create_client, Client
 
 
 # =========================
@@ -20,10 +19,10 @@ SUPABASE_URL = st.secrets.get("SUPABASE_URL")
 SUPABASE_KEY = st.secrets.get("SUPABASE_KEY")
 
 if not SUPABASE_URL or not SUPABASE_KEY:
-    st.error("Supabase bağlantı bilgileri bulunamadı.")
+    st.error("⚠️ Supabase bağlantı bilgileri bulunamadı. Secrets ayarlarını kontrol edin.")
     st.stop()
 
-supabase = create_client(SUPABASE_URL, SUPABASE_KEY)
+supabase: Client = create_client(SUPABASE_URL, SUPABASE_KEY)
 
 # =========================================================
 # 0. DOSYA YOLU YARDIMCISI
@@ -54,13 +53,6 @@ st.set_page_config(
 # =========================================================
 
 MODEL_NAME = "gemini-3.1-flash-lite"
-
-# Streamlit Cloud:
-# Settings > Secrets içine:
-# GEMINI_API_KEY = "AQ...."
-#
-# Yerel bilgisayarda:
-# .streamlit/secrets.toml içine aynı şekilde eklenebilir.
 
 GOOGLE_API_KEY = None
 
@@ -94,46 +86,8 @@ client = get_genai_client(GOOGLE_API_KEY)
 
 
 # =========================================================
-# 3. VERİTABANI
+# 3. KULLANICI OTURUMU
 # =========================================================
-
-conn = sqlite3.connect(
-    "poke_history.db",
-    check_same_thread=False
-)
-
-c = conn.cursor()
-
-c.execute("""
-CREATE TABLE IF NOT EXISTS history (
-    email TEXT,
-    role TEXT,
-    content TEXT,
-    timestamp TEXT,
-    session_id TEXT
-)
-""")
-
-c.execute("""
-CREATE TABLE IF NOT EXISTS users (
-    email TEXT UNIQUE,
-    password TEXT
-)
-""")
-
-conn.commit()
-
-
-# =========================================================
-# 4. KULLANICI OTURUMU
-# =========================================================
-# ÖNEMLİ:
-# last_user.txt KULLANILMIYOR.
-#
-# Böylece Streamlit Cloud'da bir kişinin giriş bilgisi
-# diğer kullanıcıların tarayıcılarına aktarılmaz.
-#
-# st.session_state her tarayıcı oturumunda ayrıdır.
 
 if "user_email" not in st.session_state:
     st.session_state.user_email = None
@@ -149,98 +103,62 @@ if "web_search_state" not in st.session_state:
 
 
 # =========================================================
-# 5. LOGO
+# 4. LOGO
 # =========================================================
 
-BOT_AVATAR = get_asset_path(
-    "PokeLineX-bot-logo.png"
-)
+BOT_AVATAR = get_asset_path("PokeLineX-bot-logo.png")
 
 
 # =========================================================
-# 6. ARKA PLAN SİSTEMİ
+# 5. ARKA PLAN SİSTEMİ
 # =========================================================
 
 def set_bg(image_filename):
-
     image_path = get_asset_path(image_filename)
 
     if os.path.exists(image_path):
-
         with open(image_path, "rb") as f:
-            data = base64.b64encode(
-                f.read()
-            ).decode()
+            data = base64.b64encode(f.read()).decode()
 
         st.markdown(
             f"""
             <style>
-
             .stApp {{
-                background-image:
-                    url("data:image/png;base64,{data}");
-
+                background-image: url("data:image/png;base64,{data}");
                 background-size: cover;
                 background-attachment: fixed;
             }}
-
             h1 {{
                 color: white !important;
-
-                text-shadow:
-                    2px 2px 8px black;
-
-                background-color:
-                    rgba(0, 0, 0, 0.4);
-
+                text-shadow: 2px 2px 8px black;
+                background-color: rgba(0, 0, 0, 0.4);
                 padding: 10px;
                 border-radius: 10px;
-
                 width: fit-content;
             }}
-
             .stChatMessage {{
-                background-color:
-                    rgba(0, 0, 0, 0.7) !important;
-
-                border:
-                    1px solid
-                    rgba(255, 255, 255, 0.2);
-
+                background-color: rgba(0, 0, 0, 0.7) !important;
+                border: 1px solid rgba(255, 255, 255, 0.2);
                 border-radius: 15px;
-
                 padding: 15px;
                 margin-bottom: 10px;
-
                 color: white !important;
-
-                box-shadow:
-                    2px 2px 15px
-                    rgba(0,0,0,0.5);
+                box-shadow: 2px 2px 15px rgba(0,0,0,0.5);
             }}
-
-            .stChatMessage p,
-            .stChatMessage span {{
+            .stChatMessage p, .stChatMessage span {{
                 color: white !important;
             }}
-
             [data-testid="stSidebar"] {{
-                background-color:
-                    rgba(0, 0, 0, 0.8) !important;
+                background-color: rgba(0, 0, 0, 0.8) !important;
             }}
-
             [data-testid="stSidebar"] * {{
                 color: white !important;
             }}
-
             .stFileUploader {{
-                background-color:
-                    rgba(255, 255, 255, 0.1);
-
+                background-color: rgba(255, 255, 255, 0.1);
                 padding: 10px;
                 border-radius: 10px;
             }}
-
             </style>
             """,
             unsafe_allow_html=True
@@ -248,24 +166,17 @@ def set_bg(image_filename):
 
 
 # =========================================================
-# 7. TEMA SEÇİMİ
+# 6. TEMA SEÇİMİ
 # =========================================================
 
 if os.path.exists(BOT_AVATAR):
-    st.sidebar.image(
-        BOT_AVATAR,
-        width=80
-    )
+    st.sidebar.image(BOT_AVATAR, width=80)
 
 st.sidebar.subheader("Tema Seçimi")
 
 template = st.sidebar.selectbox(
     "Karakter Teması",
-    [
-        "Pikachu",
-        "Gengar",
-        "Charizard"
-    ]
+    ["Pikachu", "Gengar", "Charizard"]
 )
 
 templates = {
@@ -278,162 +189,67 @@ set_bg(templates[template])
 
 
 # =========================================================
-# 8. GİRİŞ / KAYIT EKRANI
+# 7. GİRİŞ / KAYIT EKRANI (SUPABASE)
 # =========================================================
-# Burada özellikle last_user.txt YOK.
-# Her kullanıcı kendi tarayıcı oturumunda giriş yapar.
 
 if not st.session_state.user_email:
 
     if os.path.exists(BOT_AVATAR):
-        st.image(
-            BOT_AVATAR,
-            width=100
-        )
+        st.image(BOT_AVATAR, width=100)
 
-    st.title(
-        "⚡ PokéLineX: Giriş Yap / Kayıt Ol"
-    )
+    st.title("⚡ PokéLineX: Giriş Yap / Kayıt Ol")
 
-    tab1, tab2 = st.tabs(
-        [
-            "Giriş Yap",
-            "Kayıt Ol"
-        ]
-    )
-
-    # -----------------------------------------------------
-    # GİRİŞ
-    # -----------------------------------------------------
+    tab1, tab2 = st.tabs(["Giriş Yap", "Kayıt Ol"])
 
     with tab1:
-
-        login_email = st.text_input(
-            "Gmail Adresi:",
-            key="login_email"
-        ).strip().lower()
-
-        login_pass = st.text_input(
-            "Şifre:",
-            type="password",
-            key="login_pass"
-        )
+        login_email = st.text_input("Gmail Adresi:", key="login_email").strip().lower()
+        login_pass = st.text_input("Şifre:", type="password", key="login_pass")
 
         if st.button("Giriş Yap", type="primary"):
-
             if login_email.endswith("@gmail.com"):
+                # Supabase Sorgusu
+                res = supabase.table("users").select("*").eq("email", login_email).eq("password", login_pass).execute()
 
-                c.execute(
-                    """
-                    SELECT *
-                    FROM users
-                    WHERE email=?
-                    AND password=?
-                    """,
-                    (
-                        login_email,
-                        login_pass
-                    )
-                )
-
-                user = c.fetchone()
-
-                if user:
-
+                if res.data:
                     st.session_state.user_email = login_email
                     st.session_state.current_session_id = uuid.uuid4().hex
                     st.session_state.chat = None
                     st.session_state.web_search_state = None
-
-                    st.success(
-                        "Giriş başarılı!"
-                    )
-
+                    st.success("Giriş başarılı!")
                     st.rerun()
-
                 else:
-
-                    st.error(
-                        "E-posta veya şifre hatalı!"
-                    )
-
+                    st.error("E-posta veya şifre hatalı!")
             else:
-
-                st.error(
-                    "Lütfen geçerli bir Gmail adresi girin."
-                )
-
-    # -----------------------------------------------------
-    # KAYIT
-    # -----------------------------------------------------
+                st.error("Lütfen geçerli bir Gmail adresi girin.")
 
     with tab2:
-
-        reg_email = st.text_input(
-            "Gmail Adresi:",
-            key="reg_email"
-        ).strip().lower()
-
-        reg_pass = st.text_input(
-            "Şifre Belirleyin:",
-            type="password",
-            key="reg_pass"
-        )
+        reg_email = st.text_input("Gmail Adresi:", key="reg_email").strip().lower()
+        reg_pass = st.text_input("Şifre Belirleyin:", type="password", key="reg_pass")
 
         if st.button("Hesap Oluştur"):
-
-            if (
-                reg_email.endswith("@gmail.com")
-                and len(reg_pass) >= 4
-            ):
-
+            if reg_email.endswith("@gmail.com") and len(reg_pass) >= 4:
                 try:
-
-                    c.execute(
-                        "INSERT INTO users VALUES (?, ?)",
-                        (
-                            reg_email,
-                            reg_pass
-                        )
-                    )
-
-                    conn.commit()
-
-                    st.success(
-                        "Hesabınız oluşturuldu! "
-                        "Şimdi Giriş Yap sekmesinden "
-                        "giriş yapabilirsiniz."
-                    )
-
-                except sqlite3.IntegrityError:
-
-                    st.error(
-                        "Bu e-posta adresi zaten kayıtlı!"
-                    )
-
+                    # Supabase Kayıt
+                    supabase.table("users").insert({"email": reg_email, "password": reg_pass}).execute()
+                    st.success("Hesabınız oluşturuldu! Şimdi Giriş Yap sekmesinden giriş yapabilirsiniz.")
+                except Exception:
+                    st.error("Bu e-posta adresi zaten kayıtlı veya bir hata oluştu!")
             else:
-
-                st.error(
-                    "Geçerli bir Gmail adresi ve "
-                    "en az 4 karakterli bir şifre girin."
-                )
+                st.error("Geçerli bir Gmail adresi ve en az 4 karakterli bir şifre girin.")
 
     st.stop()
 
 
 # =========================================================
-# 9. POKELINEX SİSTEM TALİMATI
+# 8. POKELINEX SİSTEM TALİMATI
 # =========================================================
 
 POKE_SYSTEM_INSTRUCTION = """
-
 Senin adın PokéLineX.
 
-Sen Pokémon konusunda uzmanlaşmış
-bir yapay zeka asistanısın.
+Sen Pokémon konusunda uzmanlaşmış bir yapay zeka asistanısın.
 
 Görevlerin:
-
 - Pokémon bilgilerini açıklamak
 - Pokémon oyunlarında yardımcı olmak
 - Pokémon TCG hakkında bilgi vermek
@@ -441,18 +257,11 @@ Görevlerin:
 - Yeni oyunları araştırmak
 - Etkinlikleri takip etmek
 - Güncellemeleri ve yamaları araştırmak
-- Pokémon içerikleri üreten kullanıcılara
-  video ve içerik fikirleri konusunda yardımcı olmak
+- Pokémon içerikleri üreten kullanıcılara video ve içerik fikirleri konusunda yardımcı olmak
 
-Kullanıcı güncel bir Pokémon haberi,
-yeni TCG paketi,
-oyun güncellemesi,
-etkinlik,
-duyuru veya benzeri güncel bir konu sorarsa
-canlı web araması kullan.
+Kullanıcı güncel bir Pokémon haberi, yeni TCG paketi, oyun güncellemesi, etkinlik, duyuru veya benzeri güncel bir konu sorarsa canlı web araması kullan.
 
 Mümkün olduğunda güvenilir kaynakları tercih et:
-
 - Pokémon.com
 - Bulbapedia
 - Serebii
@@ -462,96 +271,50 @@ Mümkün olduğunda güvenilir kaynakları tercih et:
 - PokéOS
 
 Türkçe cevap ver.
-
-Kullanıcıyla doğal,
-yardımsever,
-bilgili ve samimi bir şekilde konuş.
-
+Kullanıcıyla doğal, yardımsever, bilgili ve samimi bir şekilde konuş.
 """
 
 
 # =========================================================
-# 10. SIDEBAR
+# 9. SIDEBAR & KONTROLLER
 # =========================================================
 
-st.sidebar.title(
-    f"👤 {st.session_state.user_email}"
-)
-
+st.sidebar.title(f"👤 {st.session_state.user_email}")
 st.sidebar.markdown("---")
-
 st.sidebar.subheader("Kontroller")
 
-use_web_search = st.sidebar.checkbox(
-    "🌐 Web Araması (Canlı)",
-    value=False
-)
+use_web_search = st.sidebar.checkbox("🌐 Web Araması (Canlı)", value=False)
 
 
 # =========================================================
-# 11. GEMINI CONFIG
+# 10. GEMINI CONFIG
 # =========================================================
 
 if use_web_search:
-
     current_config = types.GenerateContentConfig(
         system_instruction=POKE_SYSTEM_INSTRUCTION,
-        tools=[
-            types.Tool(
-                google_search=types.GoogleSearch()
-            )
-        ]
+        tools=[types.Tool(google_search=types.GoogleSearch())]
     )
-
 else:
-
     current_config = types.GenerateContentConfig(
         system_instruction=POKE_SYSTEM_INSTRUCTION
     )
 
 
 # =========================================================
-# 12. CHAT OLUŞTURMA
+# 11. CHAT OLUŞTURMA (SUPABASE HISTORIES)
 # =========================================================
 
 def create_chat():
-
-    c.execute(
-        """
-        SELECT role, content
-        FROM history
-        WHERE email=?
-        AND session_id=?
-        ORDER BY timestamp ASC
-        """,
-        (
-            st.session_state.user_email,
-            st.session_state.current_session_id
-        )
-    )
-
-    db_history = c.fetchall()
+    res = supabase.table("history").select("role, content").eq("email", st.session_state.user_email).eq("session_id", st.session_state.current_session_id).order("timestamp", desc=False).execute()
 
     formatted_history = []
-
-    for role, content in db_history:
-
-        gemini_role = (
-            "model"
-            if role == "assistant"
-            else "user"
-        )
-
-        formatted_history.append(
-            {
-                "role": gemini_role,
-                "parts": [
-                    {
-                        "text": content
-                    }
-                ]
-            }
-        )
+    for item in res.data:
+        gemini_role = "model" if item["role"] == "assistant" else "user"
+        formatted_history.append({
+            "role": gemini_role,
+            "parts": [{"text": item["content"]}]
+        })
 
     return client.chats.create(
         model=MODEL_NAME,
@@ -561,113 +324,62 @@ def create_chat():
 
 
 # =========================================================
-# 13. WEB ARAMA DURUMU DEĞİŞİNCE CHAT'İ YENİLE
+# 12. WEB ARAMA DURUMU DEĞİŞİNCE CHAT'İ YENİLE
 # =========================================================
 
 if st.session_state.web_search_state != use_web_search:
-
     st.session_state.web_search_state = use_web_search
     st.session_state.chat = create_chat()
 
 
 # =========================================================
-# 14. GEÇMİŞİ SİL
+# 13. GEÇMİŞİ SİL
 # =========================================================
 
 if st.sidebar.button("🗑️ Geçmişi Sil"):
-
-    c.execute(
-        """
-        DELETE FROM history
-        WHERE email=?
-        AND session_id=?
-        """,
-        (
-            st.session_state.user_email,
-            st.session_state.current_session_id
-        )
-    )
-
-    conn.commit()
-
+    supabase.table("history").delete().eq("email", st.session_state.user_email).eq("session_id", st.session_state.current_session_id).execute()
     st.session_state.chat = create_chat()
-
     st.rerun()
 
 
 # =========================================================
-# 15. YENİ SOHBET
+# 14. YENİ SOHBET
 # =========================================================
 
 if st.sidebar.button("➕ Yeni Sohbet"):
-
     st.session_state.current_session_id = uuid.uuid4().hex
     st.session_state.chat = create_chat()
-
     st.rerun()
 
 
 # =========================================================
-# 16. ANA BAŞLIK
+# 15. ANA BAŞLIK
 # =========================================================
 
 col1, col2 = st.columns([1, 6])
 
 with col1:
-
     if os.path.exists(BOT_AVATAR):
-
-        st.image(
-            BOT_AVATAR,
-            width=120
-        )
+        st.image(BOT_AVATAR, width=120)
 
 with col2:
-
-    st.title(
-        "PokéLineX: PokeAI Asistanı"
-    )
+    st.title("PokéLineX: PokeAI Asistanı")
 
 
 # =========================================================
-# 17. MESAJ GEÇMİŞİ
+# 16. MESAJ GEÇMİŞİ
 # =========================================================
 
-c.execute(
-    """
-    SELECT role, content
-    FROM history
-    WHERE email=?
-    AND session_id=?
-    ORDER BY timestamp ASC
-    """,
-    (
-        st.session_state.user_email,
-        st.session_state.current_session_id
-    )
-)
+res_history = supabase.table("history").select("role, content").eq("email", st.session_state.user_email).eq("session_id", st.session_state.current_session_id).order("timestamp", desc=False).execute()
 
-for role, content in c.fetchall():
-
-    avatar = (
-        BOT_AVATAR
-        if (
-            role == "assistant"
-            and os.path.exists(BOT_AVATAR)
-        )
-        else None
-    )
-
-    with st.chat_message(
-        role,
-        avatar=avatar
-    ):
-
-        st.markdown(content)
+for item in res_history.data:
+    avatar = BOT_AVATAR if (item["role"] == "assistant" and os.path.exists(BOT_AVATAR)) else None
+    with st.chat_message(item["role"], avatar=avatar):
+        st.markdown(item["content"])
 
 
 # =========================================================
-# 18. MEDYA VE MESAJ ALANI
+# 17. MEDYA VE MESAJ ALANI
 # =========================================================
 
 st.markdown("---")
@@ -675,284 +387,123 @@ st.markdown("---")
 col_btn, col_input = st.columns([1, 11])
 
 with col_btn:
-
     with st.popover("➕"):
-
         uploaded_file = st.file_uploader(
             "Görsel Yükle",
-            type=[
-                "jpg",
-                "png",
-                "jpeg"
-            ],
+            type=["jpg", "png", "jpeg"],
             key="media_upload"
         )
 
 with col_input:
-
-    user_input = st.chat_input(
-        "Pokémonlar hakkında sor...",
-        key="poke_chat_input_main"
-    )
+    user_input = st.chat_input("Pokémonlar hakkında sor...", key="poke_chat_input_main")
 
 
 # =========================================================
-# 19. MESAJ GÖNDER
+# 18. MESAJ GÖNDER
 # =========================================================
 
 if user_input:
-
     user_input = user_input.strip()
 
     if not user_input:
         st.stop()
 
-    # Chat herhangi bir nedenle yoksa yeniden oluştur.
     if st.session_state.chat is None:
         st.session_state.chat = create_chat()
 
-    now = datetime.now().strftime(
-        "%Y-%m-%d %H:%M:%S.%f"
-    )
-
-    c.execute(
-        """
-        INSERT INTO history
-        VALUES (?, ?, ?, ?, ?)
-        """,
-        (
-            st.session_state.user_email,
-            "user",
-            user_input,
-            now,
-            st.session_state.current_session_id
-        )
-    )
-
-    conn.commit()
+    # Supabase'e Kullanıcı Mesajını Kaydet
+    supabase.table("history").insert({
+        "email": st.session_state.user_email,
+        "role": "user",
+        "content": user_input,
+        "session_id": st.session_state.current_session_id
+    }).execute()
 
     with st.chat_message("user"):
-
         st.markdown(user_input)
 
-    with st.chat_message(
-        "assistant",
-        avatar=(
-            BOT_AVATAR
-            if os.path.exists(BOT_AVATAR)
-            else None
-        )
-    ):
-
+    with st.chat_message("assistant", avatar=(BOT_AVATAR if os.path.exists(BOT_AVATAR) else None)):
         try:
-
-            # Google GenAI 2.x için Chat.send_message kullanılıyor.
-            # Böylece AFC uyarısının önüne geçiyoruz.
-
             if uploaded_file:
-
-                img = Image.open(
-                    uploaded_file
-                )
-
-                response = (
-                    st.session_state.chat
-                    .send_message(
-                        [
-                            user_input,
-                            img
-                        ]
-                    )
-                )
-
+                img = Image.open(uploaded_file)
+                response = st.session_state.chat.send_message([user_input, img])
             else:
+                response = st.session_state.chat.send_message(user_input)
 
-                response = (
-                    st.session_state.chat
-                    .send_message(
-                        user_input
-                    )
-                )
+            response_text = response.text if response.text else "Üzgünüm, cevap oluşturamadım."
 
-            response_text = (
-                response.text
-                if response.text
-                else "Üzgünüm, cevap oluşturamadım."
-            )
+            st.markdown(response_text)
 
-            st.markdown(
-                response_text
-            )
-
-            c.execute(
-                """
-                INSERT INTO history
-                VALUES (?, ?, ?, ?, ?)
-                """,
-                (
-                    st.session_state.user_email,
-                    "assistant",
-                    response_text,
-                    now,
-                    st.session_state.current_session_id
-                )
-            )
-
-            conn.commit()
+            # Supabase'e Asistan Cevabını Kaydet
+            supabase.table("history").insert({
+                "email": st.session_state.user_email,
+                "role": "assistant",
+                "content": response_text,
+                "session_id": st.session_state.current_session_id
+            }).execute()
 
         except Exception as e:
-
             error_text = str(e)
 
-            if (
-                "429" in error_text
-                or
-                "RESOURCE_EXHAUSTED" in error_text
-            ):
-
-                st.error(
-                    "⚠️ API kullanım kotası dolmuş olabilir."
-                )
-
-                st.code(
-                    error_text,
-                    language="text"
-                )
-
-            elif (
-                "401" in error_text
-                or
-                "UNAUTHENTICATED" in error_text
-                or
-                "Unauthorized" in error_text
-            ):
-
-                st.error(
-                    "🔐 Gemini API kimlik doğrulama hatası (401)."
-                )
-
-                st.warning(
-                    "Streamlit Secrets içindeki "
-                    "GEMINI_API_KEY değerini kontrol edin."
-                )
-
-                st.code(
-                    error_text,
-                    language="text"
-                )
-
+            if "429" in error_text or "RESOURCE_EXHAUSTED" in error_text:
+                st.error("⚠️ API kullanım kotası dolmuş olabilir.")
+                st.code(error_text, language="text")
+            elif "401" in error_text or "UNAUTHENTICATED" in error_text or "Unauthorized" in error_text:
+                st.error("🔐 Gemini API kimlik doğrulama hatası (401).")
+                st.warning("Streamlit Secrets içindeki GEMINI_API_KEY değerini kontrol edin.")
+                st.code(error_text, language="text")
             else:
-
-                st.error(
-                    "⚠️ PokéLineX hata verdi:"
-                )
-
-                st.code(
-                    error_text,
-                    language="text"
-                )
+                st.error("⚠️ PokéLineX hata verdi:")
+                st.code(error_text, language="text")
 
 
 # =========================================================
-# 20. SOHBET GEÇMİŞLERİ
+# 19. SOHBET GEÇMİŞLERİ (SIDEBAR)
 # =========================================================
 
 st.sidebar.markdown("---")
+st.sidebar.subheader("💬 Sohbet Geçmişi")
 
-st.sidebar.subheader(
-    "💬 Sohbet Geçmişi"
-)
+# Supabase üzerinden oturum listesi çekme
+res_sessions = supabase.table("history").select("session_id, content, timestamp").eq("email", st.session_state.user_email).eq("role", "user").order("timestamp", desc=False).execute()
 
-c.execute(
-    """
-    SELECT session_id, MIN(content)
-    FROM history
-    WHERE email=?
-    AND role='user'
-    GROUP BY session_id
-    ORDER BY MIN(timestamp) DESC
-    """,
-    (
-        st.session_state.user_email,
-    )
-)
+# Benzersiz session_id'lerin ilk mesajlarını bulalım
+seen_sessions = {}
+for row in res_sessions.data:
+    s_id = row["session_id"]
+    if s_id not in seen_sessions:
+        seen_sessions[s_id] = row["content"]
 
-user_sessions = c.fetchall()
+for sess_id, first_msg in seen_sessions.items():
+    button_label = first_msg[:25] + "..." if len(first_msg) > 25 else first_msg
+    is_active = "⚡ " if sess_id == st.session_state.current_session_id else "🗨️ "
 
-for sess_id, first_msg in user_sessions:
-
-    button_label = (
-        first_msg[:25] + "..."
-        if len(first_msg) > 25
-        else first_msg
-    )
-
-    is_active = (
-        "⚡ "
-        if (
-            sess_id
-            ==
-            st.session_state.current_session_id
-        )
-        else "🗨️ "
-    )
-
-    if st.sidebar.button(
-        f"{is_active}{button_label}",
-        key=f"session_{sess_id}"
-    ):
-
+    if st.sidebar.button(f"{is_active}{button_label}", key=f"session_{sess_id}"):
         st.session_state.current_session_id = sess_id
         st.session_state.chat = create_chat()
-
         st.rerun()
 
 
 # =========================================================
-# 21. ÇIKIŞ
+# 20. ÇIKIŞ
 # =========================================================
 
-if st.sidebar.button(
-    "🚪 Çıkış Yap"
-):
-
-    # last_user.txt ARTIK YOK.
-    # Çıkış sadece bu tarayıcı oturumunu kapatır.
-
+if st.sidebar.button("🚪 Çıkış Yap"):
     st.session_state.user_email = None
     st.session_state.chat = None
     st.session_state.web_search_state = None
-
     st.rerun()
 
 
 # =========================================================
-# 22. GÜVENİLİR KAYNAKLAR
+# 21. GÜVENİLİR KAYNAKLAR
 # =========================================================
 
 st.sidebar.markdown("---")
-
-st.sidebar.subheader(
-    "🌐 Güvenilir Kaynaklar"
-)
-
-st.sidebar.markdown(
-    "[Serebii](https://www.serebii.net) | "
-    "[Bulbapedia](https://bulbapedia.bulbagarden.net)"
-)
-
-st.sidebar.markdown(
-    "[PokéDB](https://pokemondb.net) | "
-    "[Official Pokémon](https://www.pokemon.com)"
-)
-
-st.sidebar.markdown(
-    "[PokéOS](https://www.pokeos.com) | "
-    "[PokéBeach](https://www.pokebeach.com)"
-)
+st.sidebar.subheader("🌐 Güvenilir Kaynaklar")
+st.sidebar.markdown("[Serebii](https://www.serebii.net) | [Bulbapedia](https://bulbapedia.bulbagarden.net)")
+st.sidebar.markdown("[PokéDB](https://pokemondb.net) | [Official Pokémon](https://www.pokemon.com)")
+st.sidebar.markdown("[PokéOS](https://www.pokeos.com) | [PokéBeach](https://www.pokebeach.com)")
 
 st.sidebar.markdown("---")
-
-st.sidebar.caption(
-    f"PokéLineX v1.6 | {MODEL_NAME}"
-)
+st.sidebar.caption(f"PokéLineX v1.7 | {MODEL_NAME}")
