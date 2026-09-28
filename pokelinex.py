@@ -10,6 +10,9 @@ import uuid
 from google import genai
 from google.genai import types
 
+from supabase import create_client
+
+supabase = create_client(SUPABASE_URL, SUPABASE_KEY)
 
 # =========================================================
 # 0. DOSYA YOLU YARDIMCISI
