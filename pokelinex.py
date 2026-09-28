@@ -207,7 +207,6 @@ if not st.session_state.user_email:
 
         if st.button("Giriş Yap", type="primary"):
             if login_email.endswith("@gmail.com"):
-                # Supabase Sorgusu
                 res = supabase.table("users").select("*").eq("email", login_email).eq("password", login_pass).execute()
 
                 if res.data:
@@ -229,7 +228,6 @@ if not st.session_state.user_email:
         if st.button("Hesap Oluştur"):
             if reg_email.endswith("@gmail.com") and len(reg_pass) >= 4:
                 try:
-                    # Supabase Kayıt
                     supabase.table("users").insert({"email": reg_email, "password": reg_pass}).execute()
                     st.success("Hesabınız oluşturuldu! Şimdi Giriş Yap sekmesinden giriş yapabilirsiniz.")
                 except Exception:
@@ -287,22 +285,67 @@ use_web_search = st.sidebar.checkbox("🌐 Web Araması (Canlı)", value=False)
 
 
 # =========================================================
-# 10. GEMINI CONFIG
+# 10. HAFIZA YÖNETİMİ (SIDEBAR MODÜLÜ)
 # =========================================================
+
+st.sidebar.markdown("---")
+st.sidebar.subheader("🧠 Yönetilebilir Hafıza")
+
+# Yeni Hafıza Ekleme
+with st.sidebar.expander("➕ Yeni Hafıza Ekle"):
+    new_mem = st.text_input("Kayıt edilecek bilgi:", key="new_memory_input")
+    if st.button("Hafızaya Kaydet"):
+        if new_mem.strip():
+            supabase.table("user_memories").insert({
+                "email": st.session_state.user_email,
+                "memory_text": new_mem.strip()
+            }).execute()
+            st.success("Hafızaya eklendi!")
+            st.session_state.chat = None # Chat'i yeni hafızayla güncellemek için sıfırla
+            st.rerun()
+
+# Kayıtlı Hafızaları Çekme ve Listeleme
+res_memories = supabase.table("user_memories").select("*").eq("email", st.session_state.user_email).order("created_at", desc=True).execute()
+
+if res_memories.data:
+    for mem in res_memories.data:
+        m_col1, m_col2 = st.sidebar.columns([4, 1])
+        with m_col1:
+            st.caption(f"• {mem['memory_text']}")
+        with m_col2:
+            if st.button("🗑️", key=f"del_mem_{mem['id']}"):
+                supabase.table("user_memories").delete().eq("id", mem["id"]).execute()
+                st.session_state.chat = None
+                st.rerun()
+else:
+    st.sidebar.caption("Henüz kaydedilmiş bir hafıza yok.")
+
+
+# =========================================================
+# 11. GEMINI CONFIG VE DİNAMİK HAFIZA ENTEGRASYONU
+# =========================================================
+
+# Kullanıcının hafıza bilgilerini metin haline getir
+user_memories_text = ""
+if res_memories.data:
+    mem_list = [f"- {m['memory_text']}" for m in res_memories.data]
+    user_memories_text = "\n\nKULLANICI HAKKINDA BİLİNEN ÖZEL BİLGİLER (HAFIZA):\n" + "\n".join(mem_list)
+
+full_system_instruction = POKE_SYSTEM_INSTRUCTION + user_memories_text
 
 if use_web_search:
     current_config = types.GenerateContentConfig(
-        system_instruction=POKE_SYSTEM_INSTRUCTION,
+        system_instruction=full_system_instruction,
         tools=[types.Tool(google_search=types.GoogleSearch())]
     )
 else:
     current_config = types.GenerateContentConfig(
-        system_instruction=POKE_SYSTEM_INSTRUCTION
+        system_instruction=full_system_instruction
     )
 
 
 # =========================================================
-# 11. CHAT OLUŞTURMA (SUPABASE HISTORIES)
+# 12. CHAT OLUŞTURMA (SUPABASE HISTORIES)
 # =========================================================
 
 def create_chat():
@@ -324,16 +367,16 @@ def create_chat():
 
 
 # =========================================================
-# 12. WEB ARAMA DURUMU DEĞİŞİNCE CHAT'İ YENİLE
+# 13. WEB ARAMA VEYA HAFIZA DEĞİŞİNCE CHAT'İ YENİLE
 # =========================================================
 
-if st.session_state.web_search_state != use_web_search:
+if st.session_state.web_search_state != use_web_search or st.session_state.chat is None:
     st.session_state.web_search_state = use_web_search
     st.session_state.chat = create_chat()
 
 
 # =========================================================
-# 13. GEÇMİŞİ SİL
+# 14. GEÇMİŞİ SİL
 # =========================================================
 
 if st.sidebar.button("🗑️ Geçmişi Sil"):
@@ -343,7 +386,7 @@ if st.sidebar.button("🗑️ Geçmişi Sil"):
 
 
 # =========================================================
-# 14. YENİ SOHBET
+# 15. YENİ SOHBET
 # =========================================================
 
 if st.sidebar.button("➕ Yeni Sohbet"):
@@ -353,7 +396,7 @@ if st.sidebar.button("➕ Yeni Sohbet"):
 
 
 # =========================================================
-# 15. ANA BAŞLIK
+# 16. ANA BAŞLIK
 # =========================================================
 
 col1, col2 = st.columns([1, 6])
@@ -367,7 +410,7 @@ with col2:
 
 
 # =========================================================
-# 16. MESAJ GEÇMİŞİ
+# 17. MESAJ GEÇMİŞİ
 # =========================================================
 
 res_history = supabase.table("history").select("role, content").eq("email", st.session_state.user_email).eq("session_id", st.session_state.current_session_id).order("timestamp", desc=False).execute()
@@ -379,7 +422,7 @@ for item in res_history.data:
 
 
 # =========================================================
-# 17. MEDYA VE MESAJ ALANI
+# 18. MEDYA VE MESAJ ALANI
 # =========================================================
 
 st.markdown("---")
@@ -399,7 +442,7 @@ with col_input:
 
 
 # =========================================================
-# 18. MESAJ GÖNDER
+# 19. MESAJ GÖNDER
 # =========================================================
 
 if user_input:
@@ -458,16 +501,14 @@ if user_input:
 
 
 # =========================================================
-# 19. SOHBET GEÇMİŞLERİ (SIDEBAR)
+# 20. SOHBET GEÇMİŞLERİ (SIDEBAR)
 # =========================================================
 
 st.sidebar.markdown("---")
 st.sidebar.subheader("💬 Sohbet Geçmişi")
 
-# Supabase üzerinden oturum listesi çekme
 res_sessions = supabase.table("history").select("session_id, content, timestamp").eq("email", st.session_state.user_email).eq("role", "user").order("timestamp", desc=False).execute()
 
-# Benzersiz session_id'lerin ilk mesajlarını bulalım
 seen_sessions = {}
 for row in res_sessions.data:
     s_id = row["session_id"]
@@ -485,7 +526,7 @@ for sess_id, first_msg in seen_sessions.items():
 
 
 # =========================================================
-# 20. ÇIKIŞ
+# 21. ÇIKIŞ
 # =========================================================
 
 if st.sidebar.button("🚪 Çıkış Yap"):
@@ -496,7 +537,7 @@ if st.sidebar.button("🚪 Çıkış Yap"):
 
 
 # =========================================================
-# 21. GÜVENİLİR KAYNAKLAR
+# 22. GÜVENİLİR KAYNAKLAR
 # =========================================================
 
 st.sidebar.markdown("---")
