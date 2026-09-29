@@ -11,21 +11,8 @@ from google.genai import types
 from supabase import create_client, Client
 
 
-# =========================
-# API / SUPABASE AYARLARI
-# =========================
-
-SUPABASE_URL = st.secrets.get("SUPABASE_URL")
-SUPABASE_KEY = st.secrets.get("SUPABASE_KEY")
-
-if not SUPABASE_URL or not SUPABASE_KEY:
-    st.error("⚠️ Supabase bağlantı bilgileri bulunamadı. Secrets ayarlarını kontrol edin.")
-    st.stop()
-
-supabase: Client = create_client(SUPABASE_URL, SUPABASE_KEY)
-
 # =========================================================
-# 0. DOSYA YOLU YARDIMCISI
+# 0. DOSYA YOLU YARDIMCISI & SAYFA YAPILANDIRMASI
 # =========================================================
 
 def get_asset_path(filename):
@@ -36,11 +23,6 @@ def get_asset_path(filename):
 
     return os.path.join(base_path, filename)
 
-
-# =========================================================
-# 1. SAYFA YAPILANDIRMASI
-# =========================================================
-
 st.set_page_config(
     page_title="PokéLineX: PokeAI Asistanı",
     page_icon="⚡",
@@ -49,44 +31,44 @@ st.set_page_config(
 
 
 # =========================================================
-# 2. GEMINI API AYARLARI
+# 1. API / SUPABASE AYARLARI
+# =========================================================
+
+SUPABASE_URL = st.secrets.get("SUPABASE_URL")
+SUPABASE_KEY = st.secrets.get("SUPABASE_KEY")
+
+if not SUPABASE_URL or not SUPABASE_KEY:
+    st.error("⚠️ Supabase bağlantı bilgileri bulunamadı. Secrets ayarlarını kontrol edin.")
+    st.stop()
+
+supabase: Client = create_client(SUPABASE_URL, SUPABASE_KEY)
+
+
+# =========================================================
+# 2. ÇOKLU GEMINI API KEY ROTASYONU (KOTA KORUMASI)
 # =========================================================
 
 MODEL_NAME = "gemini-3.1-flash-lite"
 
-GOOGLE_API_KEY = None
+# Yedekli API Key Listesi
+api_keys = []
 
-try:
-    GOOGLE_API_KEY = st.secrets.get("GEMINI_API_KEY")
-except Exception:
-    pass
+key1 = st.secrets.get("GEMINI_API_KEY") or os.environ.get("GEMINI_API_KEY")
+key2 = st.secrets.get("GEMINI_API_KEY_2") or os.environ.get("GEMINI_API_KEY_2")
 
-if not GOOGLE_API_KEY:
-    GOOGLE_API_KEY = os.environ.get("GEMINI_API_KEY")
+if key1: api_keys.append(key1.strip())
+if key2: api_keys.append(key2.strip())
 
-if isinstance(GOOGLE_API_KEY, str):
-    GOOGLE_API_KEY = GOOGLE_API_KEY.strip()
-
-if not GOOGLE_API_KEY:
-    st.error(
-        "⚠️ Gemini API anahtarı bulunamadı.\n\n"
-        "Streamlit Cloud kullanıyorsan uygulamanın "
-        "Settings > Secrets bölümünde GEMINI_API_KEY "
-        "tanımlı olduğundan emin ol."
-    )
+if not api_keys:
+    st.error("⚠️ Hiçbir Gemini API anahtarı bulunamadı! Lütfen Secrets bölümünü kontrol edin.")
     st.stop()
 
-
-@st.cache_resource
 def get_genai_client(api_key):
     return genai.Client(api_key=api_key)
 
 
-client = get_genai_client(GOOGLE_API_KEY)
-
-
 # =========================================================
-# 3. KULLANICI OTURUMU
+# 3. KULLANICI OTURUMU & OTOMATİK GİRİŞ (AUTOLOGIN)
 # =========================================================
 
 if "user_email" not in st.session_state:
@@ -101,17 +83,23 @@ if "chat" not in st.session_state:
 if "web_search_state" not in st.session_state:
     st.session_state.web_search_state = None
 
+# URL Parametresi ile Otomatik Oturum Hatırlama Kontrolü
+query_params = st.query_params
+if not st.session_state.user_email and "session_token" in query_params:
+    saved_token = query_params["session_token"]
+    try:
+        res = supabase.table("users").select("email").eq("session_token", saved_token).execute()
+        if res.data:
+            st.session_state.user_email = res.data[0]["email"]
+    except Exception:
+        pass
+
 
 # =========================================================
-# 4. LOGO
+# 4. LOGO & ARKA PLAN
 # =========================================================
 
 BOT_AVATAR = get_asset_path("PokeLineX-bot-logo.png")
-
-
-# =========================================================
-# 5. ARKA PLAN SİSTEMİ
-# =========================================================
 
 def set_bg(image_filename):
     image_path = get_asset_path(image_filename)
@@ -166,7 +154,7 @@ def set_bg(image_filename):
 
 
 # =========================================================
-# 6. TEMA SEÇİMİ
+# 5. TEMA SEÇİMİ
 # =========================================================
 
 if os.path.exists(BOT_AVATAR):
@@ -189,7 +177,7 @@ set_bg(templates[template])
 
 
 # =========================================================
-# 7. GİRİŞ / KAYIT EKRANI (SUPABASE)
+# 6. GİRİŞ / KAYIT EKRANI (KALICI OTURUM DESTEKLİ)
 # =========================================================
 
 if not st.session_state.user_email:
@@ -204,6 +192,7 @@ if not st.session_state.user_email:
     with tab1:
         login_email = st.text_input("Gmail Adresi:", key="login_email").strip().lower()
         login_pass = st.text_input("Şifre:", type="password", key="login_pass")
+        remember_me = st.checkbox("Beni Hatırla (Tekrar Giriş Yapma)", value=True)
 
         if st.button("Giriş Yap", type="primary"):
             if login_email.endswith("@gmail.com"):
@@ -214,7 +203,17 @@ if not st.session_state.user_email:
                     st.session_state.current_session_id = uuid.uuid4().hex
                     st.session_state.chat = None
                     st.session_state.web_search_state = None
-                    st.success("Giriş başarılı!")
+
+                    # Oturumu Hatırla: Supabase'e token kaydet ve URL'e ekle
+                    if remember_me:
+                        token = uuid.uuid4().hex
+                        try:
+                            supabase.table("users").update({"session_token": token}).eq("email", login_email).execute()
+                            st.query_params["session_token"] = token
+                        except Exception:
+                            pass
+
+                    st.success("Giriş başarılı! Yönlendiriliyorsunuz...")
                     st.rerun()
                 else:
                     st.error("E-posta veya şifre hatalı!")
@@ -239,7 +238,7 @@ if not st.session_state.user_email:
 
 
 # =========================================================
-# 8. POKELINEX SİSTEM TALİMATI
+# 7. POKELINEX SİSTEM TALİMATI
 # =========================================================
 
 POKE_SYSTEM_INSTRUCTION = """
@@ -274,7 +273,7 @@ Kullanıcıyla doğal, yardımsever, bilgili ve samimi bir şekilde konuş.
 
 
 # =========================================================
-# 9. SIDEBAR & KONTROLLER
+# 8. SIDEBAR & KONTROLLER
 # =========================================================
 
 st.sidebar.title(f"👤 {st.session_state.user_email}")
@@ -285,13 +284,12 @@ use_web_search = st.sidebar.checkbox("🌐 Web Araması (Canlı)", value=False)
 
 
 # =========================================================
-# 10. HAFIZA YÖNETİMİ (SIDEBAR MODÜLÜ)
+# 9. HAFIZA YÖNETİMİ (SIDEBAR MODÜLÜ)
 # =========================================================
 
 st.sidebar.markdown("---")
 st.sidebar.subheader("🧠 Yönetilebilir Hafıza")
 
-# Yeni Hafıza Ekleme
 with st.sidebar.expander("➕ Yeni Hafıza Ekle"):
     new_mem = st.text_input("Kayıt edilecek bilgi:", key="new_memory_input")
     if st.button("Hafızaya Kaydet"):
@@ -301,10 +299,9 @@ with st.sidebar.expander("➕ Yeni Hafıza Ekle"):
                 "memory_text": new_mem.strip()
             }).execute()
             st.success("Hafızaya eklendi!")
-            st.session_state.chat = None # Chat'i yeni hafızayla güncellemek için sıfırla
+            st.session_state.chat = None
             st.rerun()
 
-# Kayıtlı Hafızaları Çekme ve Listeleme
 res_memories = supabase.table("user_memories").select("*").eq("email", st.session_state.user_email).order("created_at", desc=True).execute()
 
 if res_memories.data:
@@ -322,10 +319,9 @@ else:
 
 
 # =========================================================
-# 11. GEMINI CONFIG VE DİNAMİK HAFIZA ENTEGRASYONU
+# 10. GEMINI CONFIG VE DİNAMİK HAFIZA ENTEGRASYONU
 # =========================================================
 
-# Kullanıcının hafıza bilgilerini metin haline getir
 user_memories_text = ""
 if res_memories.data:
     mem_list = [f"- {m['memory_text']}" for m in res_memories.data]
@@ -333,22 +329,22 @@ if res_memories.data:
 
 full_system_instruction = POKE_SYSTEM_INSTRUCTION + user_memories_text
 
-if use_web_search:
-    current_config = types.GenerateContentConfig(
-        system_instruction=full_system_instruction,
-        tools=[types.Tool(google_search=types.GoogleSearch())]
-    )
-else:
-    current_config = types.GenerateContentConfig(
+def get_config(enable_search=True):
+    if enable_search:
+        return types.GenerateContentConfig(
+            system_instruction=full_system_instruction,
+            tools=[types.Tool(google_search=types.GoogleSearch())]
+        )
+    return types.GenerateContentConfig(
         system_instruction=full_system_instruction
     )
 
 
 # =========================================================
-# 12. CHAT OLUŞTURMA (SUPABASE HISTORIES)
+# 11. CHAT OLUŞTURMA (SUPABASE HISTORIES)
 # =========================================================
 
-def create_chat():
+def create_chat(active_client, enable_search=True):
     res = supabase.table("history").select("role, content").eq("email", st.session_state.user_email).eq("session_id", st.session_state.current_session_id).order("timestamp", desc=False).execute()
 
     formatted_history = []
@@ -359,44 +355,39 @@ def create_chat():
             "parts": [{"text": item["content"]}]
         })
 
-    return client.chats.create(
+    return active_client.chats.create(
         model=MODEL_NAME,
-        config=current_config,
+        config=get_config(enable_search),
         history=formatted_history
     )
 
 
 # =========================================================
-# 13. WEB ARAMA VEYA HAFIZA DEĞİŞİNCE CHAT'İ YENİLE
+# 12. WEB ARAMA VEYA HAFIZA DEĞİŞİNCE CHAT'İ YENİLE
 # =========================================================
 
 if st.session_state.web_search_state != use_web_search or st.session_state.chat is None:
     st.session_state.web_search_state = use_web_search
-    st.session_state.chat = create_chat()
+    st.session_state.chat = create_chat(get_genai_client(api_keys[0]), use_web_search)
 
 
 # =========================================================
-# 14. GEÇMİŞİ SİL
+# 13. KONTROL BUTONLARI
 # =========================================================
 
 if st.sidebar.button("🗑️ Geçmişi Sil"):
     supabase.table("history").delete().eq("email", st.session_state.user_email).eq("session_id", st.session_state.current_session_id).execute()
-    st.session_state.chat = create_chat()
+    st.session_state.chat = create_chat(get_genai_client(api_keys[0]), use_web_search)
     st.rerun()
-
-
-# =========================================================
-# 15. YENİ SOHBET
-# =========================================================
 
 if st.sidebar.button("➕ Yeni Sohbet"):
     st.session_state.current_session_id = uuid.uuid4().hex
-    st.session_state.chat = create_chat()
+    st.session_state.chat = create_chat(get_genai_client(api_keys[0]), use_web_search)
     st.rerun()
 
 
 # =========================================================
-# 16. ANA BAŞLIK
+# 14. ANA BAŞLIK
 # =========================================================
 
 col1, col2 = st.columns([1, 6])
@@ -410,7 +401,7 @@ with col2:
 
 
 # =========================================================
-# 17. MESAJ GEÇMİŞİ
+# 15. MESAJ GEÇMİŞİ
 # =========================================================
 
 res_history = supabase.table("history").select("role, content").eq("email", st.session_state.user_email).eq("session_id", st.session_state.current_session_id).order("timestamp", desc=False).execute()
@@ -422,7 +413,7 @@ for item in res_history.data:
 
 
 # =========================================================
-# 18. MEDYA VE MESAJ ALANI
+# 16. MEDYA VE MESAJ ALANI
 # =========================================================
 
 st.markdown("---")
@@ -442,17 +433,50 @@ with col_input:
 
 
 # =========================================================
-# 19. MESAJ GÖNDER
+# 17. AKILLI MESAJ GÖNDERME VE DAYANIKLI KOTA YÖNETİMİ
 # =========================================================
+
+def send_message_with_fallback(prompt, uploaded_img=None):
+    """
+    Sırasıyla API keylerini dener. Kota aşımı yaşanırsa yedek keye geçer.
+    Her ikisi de biterse web aramasını kapatıp genel hafızasından sevimli bir uyarı ile yanıt verir.
+    """
+    payload = [prompt, uploaded_img] if uploaded_img else prompt
+
+    # 1. Aşama: Sırayla API Key'leri dene
+    for idx, key in enumerate(api_keys):
+        try:
+            temp_client = get_genai_client(key)
+            temp_chat = create_chat(temp_client, use_web_search)
+            response = temp_chat.send_message(payload)
+            return response.text, None
+        except Exception as e:
+            err = str(e)
+            if "429" in err or "RESOURCE_EXHAUSTED" in err:
+                continue # Diğer keye geç
+            else:
+                return None, f"⚠️ Bir sorun oluştu: {err}"
+
+    # 2. Aşama: Eğer hepsi dolduysa, Web Arama OLMADAN dene (Fallback)
+    try:
+        temp_client = get_genai_client(api_keys[0])
+        fallback_chat = create_chat(temp_client, enable_search=False)
+        response = fallback_chat.send_message(payload)
+        
+        cute_warning = (
+            "⚡ *Pokédex canlı web aramaları şu an aşırı yoğun! B planına geçtik:* "
+            "Canlı web aramasını geçici olarak devre dışı bıraktım ama sorunu genel Pokémon hafızamdan yanıtladım:\n\n"
+        )
+        return cute_warning + response.text, None
+    except Exception as e:
+        return None, "⚡ *Pikachu'nun şarjı bitti!* Canlı web araması kotaları şu an doldu. Lütfen 1 dakika bekleyip tekrar dene."
+
 
 if user_input:
     user_input = user_input.strip()
 
     if not user_input:
         st.stop()
-
-    if st.session_state.chat is None:
-        st.session_state.chat = create_chat()
 
     # Supabase'e Kullanıcı Mesajını Kaydet
     supabase.table("history").insert({
@@ -466,17 +490,11 @@ if user_input:
         st.markdown(user_input)
 
     with st.chat_message("assistant", avatar=(BOT_AVATAR if os.path.exists(BOT_AVATAR) else None)):
-        try:
-            if uploaded_file:
-                img = Image.open(uploaded_file)
-                response = st.session_state.chat.send_message([user_input, img])
-            else:
-                response = st.session_state.chat.send_message(user_input)
+        img_obj = Image.open(uploaded_file) if uploaded_file else None
+        response_text, error_msg = send_message_with_fallback(user_input, img_obj)
 
-            response_text = response.text if response.text else "Üzgünüm, cevap oluşturamadım."
-
+        if response_text:
             st.markdown(response_text)
-
             # Supabase'e Asistan Cevabını Kaydet
             supabase.table("history").insert({
                 "email": st.session_state.user_email,
@@ -484,24 +502,12 @@ if user_input:
                 "content": response_text,
                 "session_id": st.session_state.current_session_id
             }).execute()
-
-        except Exception as e:
-            error_text = str(e)
-
-            if "429" in error_text or "RESOURCE_EXHAUSTED" in error_text:
-                st.error("⚠️ API kullanım kotası dolmuş olabilir.")
-                st.code(error_text, language="text")
-            elif "401" in error_text or "UNAUTHENTICATED" in error_text or "Unauthorized" in error_text:
-                st.error("🔐 Gemini API kimlik doğrulama hatası (401).")
-                st.warning("Streamlit Secrets içindeki GEMINI_API_KEY değerini kontrol edin.")
-                st.code(error_text, language="text")
-            else:
-                st.error("⚠️ PokéLineX hata verdi:")
-                st.code(error_text, language="text")
+        else:
+            st.error(error_msg)
 
 
 # =========================================================
-# 20. SOHBET GEÇMİŞLERİ (SIDEBAR)
+# 18. SOHBET GEÇMİŞLERİ (SIDEBAR)
 # =========================================================
 
 st.sidebar.markdown("---")
@@ -521,23 +527,24 @@ for sess_id, first_msg in seen_sessions.items():
 
     if st.sidebar.button(f"{is_active}{button_label}", key=f"session_{sess_id}"):
         st.session_state.current_session_id = sess_id
-        st.session_state.chat = create_chat()
+        st.session_state.chat = create_chat(get_genai_client(api_keys[0]), use_web_search)
         st.rerun()
 
 
 # =========================================================
-# 21. ÇIKIŞ
+# 19. ÇIKIŞ YAP
 # =========================================================
 
 if st.sidebar.button("🚪 Çıkış Yap"):
     st.session_state.user_email = None
     st.session_state.chat = None
     st.session_state.web_search_state = None
+    st.query_params.clear() # Oturum tokenini temizle
     st.rerun()
 
 
 # =========================================================
-# 22. GÜVENİLİR KAYNAKLAR
+# 20. GÜVENİLİR KAYNAKLAR
 # =========================================================
 
 st.sidebar.markdown("---")
@@ -547,4 +554,4 @@ st.sidebar.markdown("[PokéDB](https://pokemondb.net) | [Official Pokémon](http
 st.sidebar.markdown("[PokéOS](https://www.pokeos.com) | [PokéBeach](https://www.pokebeach.com)")
 
 st.sidebar.markdown("---")
-st.sidebar.caption(f"PokéLineX v1.7 | {MODEL_NAME}")
+st.sidebar.caption(f"PokéLineX v2.0 | {MODEL_NAME}")
