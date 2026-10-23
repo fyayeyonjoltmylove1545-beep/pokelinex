@@ -2,3 +2,4 @@ streamlit
 pillow
 google-genai>=2.23.0
 supabase
+streamlit-cookies-controller
