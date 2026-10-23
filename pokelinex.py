@@ -9,6 +9,10 @@ import uuid
 from google import genai
 from google.genai import types
 from supabase import create_client, Client
+from streamlit_cookies_controller import CookieController
+
+# Çerez yöneticisini başlat
+controller = CookieController()
 
 
 # =========================================================
@@ -68,7 +72,7 @@ def get_genai_client(api_key):
 
 
 # =========================================================
-# 3. KULLANICI OTURUMU & OTOMATİK GİRİŞ (AUTOLOGIN)
+# 3. KULLANICI OTURUMU & ÇEREZ İLE OTOMATİK GİRİŞ
 # =========================================================
 
 if "user_email" not in st.session_state:
@@ -83,12 +87,12 @@ if "chat" not in st.session_state:
 if "web_search_state" not in st.session_state:
     st.session_state.web_search_state = None
 
-# URL Parametresi ile Otomatik Oturum Hatırlama Kontrolü
-query_params = st.query_params
-if not st.session_state.user_email and "session_token" in query_params:
-    saved_token = query_params["session_token"]
+# Tarayıcı çerezlerinden (Cookie) token kontrolü
+saved_cookie_token = controller.get("pokelinex_session")
+
+if not st.session_state.user_email and saved_cookie_token:
     try:
-        res = supabase.table("users").select("email").eq("session_token", saved_token).execute()
+        res = supabase.table("users").select("email").eq("session_token", saved_cookie_token).execute()
         if res.data:
             st.session_state.user_email = res.data[0]["email"]
     except Exception:
@@ -177,7 +181,7 @@ set_bg(templates[template])
 
 
 # =========================================================
-# 6. GİRİŞ / KAYIT EKRANI (KALICI OTURUM DESTEKLİ)
+# 6. GİRİŞ / KAYIT EKRANI (ÇEREZ DESTEKLİ)
 # =========================================================
 
 if not st.session_state.user_email:
@@ -204,12 +208,12 @@ if not st.session_state.user_email:
                     st.session_state.chat = None
                     st.session_state.web_search_state = None
 
-                    # Oturumu Hatırla: Supabase'e token kaydet ve URL'e ekle
+                    # Beni Hatırla seçiliyse tarayıcı çerezine (cookie) token yaz
                     if remember_me:
                         token = uuid.uuid4().hex
                         try:
                             supabase.table("users").update({"session_token": token}).eq("email", login_email).execute()
-                            st.query_params["session_token"] = token
+                            controller.set("pokelinex_session", token, max_age=31536000) # 1 yıl geçerli çerez
                         except Exception:
                             pass
 
@@ -437,13 +441,8 @@ with col_input:
 # =========================================================
 
 def send_message_with_fallback(prompt, uploaded_img=None):
-    """
-    Sırasıyla API keylerini dener. Kota aşımı yaşanırsa yedek keye geçer.
-    Her ikisi de biterse web aramasını kapatıp genel hafızasından sevimli bir uyarı ile yanıt verir.
-    """
     payload = [prompt, uploaded_img] if uploaded_img else prompt
 
-    # 1. Aşama: Sırayla API Key'leri dene
     for idx, key in enumerate(api_keys):
         try:
             temp_client = get_genai_client(key)
@@ -453,11 +452,10 @@ def send_message_with_fallback(prompt, uploaded_img=None):
         except Exception as e:
             err = str(e)
             if "429" in err or "RESOURCE_EXHAUSTED" in err:
-                continue # Diğer keye geç
+                continue
             else:
                 return None, f"⚠️ Bir sorun oluştu: {err}"
 
-    # 2. Aşama: Eğer hepsi dolduysa, Web Arama OLMADAN dene (Fallback)
     try:
         temp_client = get_genai_client(api_keys[0])
         fallback_chat = create_chat(temp_client, enable_search=False)
@@ -478,7 +476,6 @@ if user_input:
     if not user_input:
         st.stop()
 
-    # Supabase'e Kullanıcı Mesajını Kaydet
     supabase.table("history").insert({
         "email": st.session_state.user_email,
         "role": "user",
@@ -495,7 +492,6 @@ if user_input:
 
         if response_text:
             st.markdown(response_text)
-            # Supabase'e Asistan Cevabını Kaydet
             supabase.table("history").insert({
                 "email": st.session_state.user_email,
                 "role": "assistant",
@@ -539,7 +535,7 @@ if st.sidebar.button("🚪 Çıkış Yap"):
     st.session_state.user_email = None
     st.session_state.chat = None
     st.session_state.web_search_state = None
-    st.query_params.clear() # Oturum tokenini temizle
+    controller.set("pokelinex_session", "", max_age=0) # Çerezi temizle/sıfırla
     st.rerun()
 
 
